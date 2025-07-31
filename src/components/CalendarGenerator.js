@@ -122,21 +122,21 @@ const CalendarGenerator = () => {
                 {
                   type: 'box', layout: 'baseline', spacing: 'sm',
                   contents: [
-                    { type: 'text', text: '日期', color: '#6b7280', size: 'sm', flex: 1 },
+                    { type: 'text', text: '集合日期', color: '#6b7280', size: 'sm', flex: 1 },
                     { type: 'text', text: date, color: '#111827', size: 'sm', flex: 4 }
                   ]
                 },
                 {
                   type: 'box', layout: 'baseline', spacing: 'sm',
                   contents: [
-                    { type: 'text', text: '時間', color: '#6b7280', size: 'sm', flex: 1 },
+                    { type: 'text', text: '集合時間', color: '#6b7280', size: 'sm', flex: 1 },
                     { type: 'text', text: time, color: '#111827', size: 'sm', flex: 4 }
                   ]
                 },
                 {
                   type: 'box', layout: 'baseline', spacing: 'sm',
                   contents: [
-                    { type: 'text', text: '地址', color: '#6b7280', size: 'sm', flex: 1 },
+                    { type: 'text', text: '集合地址', color: '#6b7280', size: 'sm', flex: 1 },
                     { type: 'text', text: address, color: '#111827', size: 'sm', flex: 4 }
                   ]
                 }
