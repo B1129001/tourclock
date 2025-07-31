@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import liff from '@line/liff';
-import { Download, MapPin, Share2, Copy, Calendar, Navigation, Clock, Users } from 'lucide-react';
+import { Download, MapPin, Share2, Copy, Calendar, Clock, Users } from 'lucide-react';
 import './CalendarGenerator.css';
 
 const CalendarGenerator = () => {
@@ -9,7 +9,6 @@ const CalendarGenerator = () => {
     time: '', 
     name: '', 
     address: '',
-    description: '',
     participants: ''
   });
   const [userProfile, setUserProfile] = useState(null);
@@ -197,7 +196,7 @@ const CalendarGenerator = () => {
   }, [formData]);
 
   // 生成 ICS 檔案內容
-  const generateICS = (date, time, name, address, description) => {
+  const generateICS = (date, time, name, address) => {
     const dateObj = new Date(`${date}T${time}`);
     const start = dateObj.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const end = new Date(dateObj.getTime() + 3600000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -206,7 +205,7 @@ const CalendarGenerator = () => {
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
     
     const eventDescription = [
-      description || '集合活動',
+      '集合活動',
       '',
       `地圖連結：${mapUrl}`,
       `地址：${address}`
@@ -235,13 +234,13 @@ const CalendarGenerator = () => {
 
   // 下載 ICS 檔案
   const downloadICS = () => {
-    const { date, time, name, address, description } = formData;
+    const { date, time, name, address } = formData;
     if (!date || !time || !address) {
       alert('請填寫日期、時間和地址');
       return;
     }
 
-    const icsContent = generateICS(date, time, name, address, description);
+    const icsContent = generateICS(date, time, name, address);
     const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -254,7 +253,7 @@ const CalendarGenerator = () => {
 
   // 加入 Google Calendar
   const addToGoogleCalendar = () => {
-    const { date, time, name, address, description } = formData;
+    const { date, time, name, address } = formData;
     if (!date || !time || !address) {
       alert('請填寫日期、時間和地址');
       return;
@@ -270,7 +269,7 @@ const CalendarGenerator = () => {
       action: 'TEMPLATE',
       text: name || '集合活動',
       dates: `${start}/${end}`,
-      details: description || '集合通知',
+      details: '集合通知',
       location: address,
       sf: 'true',
       output: 'xml'
@@ -282,7 +281,7 @@ const CalendarGenerator = () => {
 
   // 複製活動資訊
   const copyInfo = async () => {
-    const { date, time, name, address, description, participants } = formData;
+    const { date, time, name, address, participants } = formData;
     if (!date || !time || !address) {
       alert('請填寫日期、時間和地址');
       return;
@@ -298,7 +297,6 @@ const CalendarGenerator = () => {
       })}`,
       `🕒 ${time}`,
       `📍 ${address}`,
-      description ? `📝 ${description}` : '',
       participants ? `👥 參加者：${participants}` : '',
       `🗺️ 地圖：https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     ].filter(Boolean).join('\n');
@@ -314,7 +312,7 @@ const CalendarGenerator = () => {
 
   // 分享到 LINE
   const shareInfo = async () => {
-    const { date, time, name, address, description, participants } = formData;
+    const { date, time, name, address, participants } = formData;
     if (!date || !time || !address) {
       alert('請填寫日期、時間和地址');
       return;
@@ -478,27 +476,6 @@ const CalendarGenerator = () => {
                     }
                   ]
                 },
-                ...(description ? [{
-                  type: 'box',
-                  layout: 'horizontal',
-                  contents: [
-                    {
-                      type: 'text',
-                      text: '📝',
-                      size: 'sm',
-                      flex: 0
-                    },
-                    {
-                      type: 'text',
-                      text: description,
-                      size: 'sm',
-                      color: '#111827',
-                      wrap: true,
-                      flex: 4,
-                      margin: 'sm'
-                    }
-                  ]
-                }] : []),
                 ...(participants ? [{
                   type: 'box',
                   layout: 'horizontal',
@@ -571,16 +548,6 @@ const CalendarGenerator = () => {
                 label: '🗺️ 查看地圖',
                 uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
               }
-            },
-            {
-              type: 'button',
-              style: 'secondary',
-              height: 'sm',
-              action: {
-                type: 'uri',
-                label: '🚗 開始導航',
-                uri: `https://maps.google.com/maps?daddr=${encodeURIComponent(address)}`
-              }
             }
           ]
         }
@@ -607,16 +574,6 @@ const CalendarGenerator = () => {
     }
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`;
     window.open(mapUrl, '_blank');
-  };
-
-  // 開始導航
-  const startNavigation = () => {
-    if (!formData.address) {
-      alert('請先設定地址');
-      return;
-    }
-    const navUrl = `https://maps.google.com/maps?daddr=${encodeURIComponent(formData.address)}`;
-    window.open(navUrl, '_blank');
   };
 
   return (
@@ -677,17 +634,6 @@ const CalendarGenerator = () => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="description">活動說明（選填）</label>
-            <textarea 
-              id="description"
-              value={formData.description} 
-              onChange={e => setFormData({ ...formData, description: e.target.value })} 
-              placeholder="例如：記得帶雨傘、穿輕便服裝"
-              rows="3"
-            />
-          </div>
-
-          <div className="form-group">
             <label htmlFor="participants">參加者（選填）</label>
             <input 
               id="participants"
@@ -717,10 +663,6 @@ const CalendarGenerator = () => {
             <button className="btn btn-map" onClick={openMap}>
               <MapPin size={16} />
               查看地圖
-            </button>
-            <button className="btn btn-navigation" onClick={startNavigation}>
-              <Navigation size={16} />
-              開始導航
             </button>
             <button className="btn btn-copy" onClick={copyInfo}>
               <Copy size={16} />
