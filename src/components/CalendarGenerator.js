@@ -1,200 +1,748 @@
 import React, { useState, useEffect, useRef } from 'react';
 import liff from '@line/liff';
-import { Download, MapPin, Share2, Copy, Calendar } from 'lucide-react';
+import { Download, MapPin, Share2, Copy, Calendar, Navigation, Clock, Users } from 'lucide-react';
 import './CalendarGenerator.css';
 
 const CalendarGenerator = () => {
-  const [formData, setFormData] = useState({ date: '', time: '', name: '', address: '' });
+  const [formData, setFormData] = useState({ 
+    date: '', 
+    time: '', 
+    name: '', 
+    address: '',
+    description: '',
+    participants: ''
+  });
   const [userProfile, setUserProfile] = useState(null);
   const [countdown, setCountdown] = useState('');
+  const [countdownClass, setCountdownClass] = useState('countdown-red');
+  const [isLiffReady, setIsLiffReady] = useState(false);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
 
-  // LINE 登入
+  // 初始化 LIFF
   useEffect(() => {
     liff.init({ liffId: process.env.REACT_APP_LIFF_ID }).then(async () => {
-      if (!liff.isLoggedIn()) liff.login();
-      else {
-        const profile = await liff.getProfile();
-        setUserProfile(profile);
+      setIsLiffReady(true);
+      if (!liff.isLoggedIn()) {
+        liff.login();
+      } else {
+        try {
+          const profile = await liff.getProfile();
+          setUserProfile(profile);
+        } catch (error) {
+          console.error('獲取用戶資料失敗:', error);
+        }
       }
-    }).catch(console.error);
+    }).catch(error => {
+      console.error('LIFF 初始化失敗:', error);
+      setIsLiffReady(true); // 即使失敗也設為 true，讓用戶可以使用基本功能
+    });
   }, []);
 
-  // 地圖初始化
+  // 初始化地圖
   useEffect(() => {
     if (!window.google || !window.google.maps) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => initMap({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => initMap({ lat: 25.0478, lng: 121.5319 })
-    );
+    
+    const initializeMap = () => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          initMap({ 
+            lat: position.coords.latitude, 
+            lng: position.coords.longitude 
+          });
+        },
+        (error) => {
+          console.log('無法獲取當前位置:', error);
+          // 預設台北101位置
+          initMap({ lat: 25.0478, lng: 121.5319 });
+        }
+      );
+    };
 
     function initMap(center) {
+      if (!document.getElementById('map')) return;
+      
       mapRef.current = new window.google.maps.Map(document.getElementById('map'), {
-        center, zoom: 15
+        center,
+        zoom: 15,
+        styles: [
+          {
+            featureType: 'poi',
+            elementType: 'labels',
+            stylers: [{ visibility: 'on' }]
+          }
+        ]
       });
 
-      mapRef.current.addListener('click', (e) => {
-        const latlng = e.latLng;
-        if (markerRef.current) markerRef.current.setMap(null);
-        markerRef.current = new window.google.maps.Marker({ position: latlng, map: mapRef.current });
-        new window.google.maps.Geocoder().geocode({ location: latlng }, (results, status) => {
+      // 地圖點擊事件
+      mapRef.current.addListener('click', (event) => {
+        const latLng = event.latLng;
+        
+        // 清除之前的標記
+        if (markerRef.current) {
+          markerRef.current.setMap(null);
+        }
+        
+        // 添加新標記
+        markerRef.current = new window.google.maps.Marker({
+          position: latLng,
+          map: mapRef.current,
+          animation: window.google.maps.Animation.DROP
+        });
+
+        // 反向地理編碼
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: latLng }, (results, status) => {
           if (status === 'OK' && results[0]) {
+            const result = results[0];
+            const address = result.formatted_address;
+            const placeName = result.address_components?.[0]?.long_name || '';
+            
             setFormData(prev => ({
               ...prev,
-              address: results[0].formatted_address,
-              name: results[0].address_components?.[0]?.long_name || ''
+              address: address,
+              name: prev.name || placeName
             }));
           }
         });
       });
+
+      // 搜索框功能
+      const searchBox = new window.google.maps.places.SearchBox(
+        document.getElementById('map-search')
+      );
+      
+      searchBox.addListener('places_changed', () => {
+        const places = searchBox.getPlaces();
+        if (places.length === 0) return;
+
+        const place = places[0];
+        if (!place.geometry || !place.geometry.location) return;
+
+        // 清除之前的標記
+        if (markerRef.current) {
+          markerRef.current.setMap(null);
+        }
+
+        // 添加標記
+        markerRef.current = new window.google.maps.Marker({
+          position: place.geometry.location,
+          map: mapRef.current
+        });
+
+        // 設置地圖中心和縮放
+        mapRef.current.setCenter(place.geometry.location);
+        mapRef.current.setZoom(17);
+
+        // 更新表單數據
+        setFormData(prev => ({
+          ...prev,
+          address: place.formatted_address,
+          name: prev.name || place.name
+        }));
+      });
     }
+
+    // 延遲初始化以確保 DOM 元素存在
+    setTimeout(initializeMap, 100);
   }, []);
 
-  // 倒數顯示
+  // 倒數計時器
   useEffect(() => {
     const timer = setInterval(() => {
       const { date, time } = formData;
-      if (!date || !time) return setCountdown('');
+      if (!date || !time) {
+        setCountdown('');
+        setCountdownClass('countdown-red');
+        return;
+      }
+
       const target = new Date(`${date}T${time}`);
-      const diff = target - new Date();
-      if (diff <= 0) return setCountdown('⏰ 已過期');
-      const h = Math.floor(diff / (1000 * 60 * 60));
-      const m = Math.floor((diff / (1000 * 60)) % 60);
-      const s = Math.floor((diff / 1000) % 60);
-      setCountdown(`⏳ 倒數 ${h} 時 ${m} 分 ${s} 秒`);
+      const now = new Date();
+      const diff = target - now;
+
+      if (diff <= 0) {
+        setCountdown('⏰ 已過期');
+        setCountdownClass('countdown-expired');
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+
+      let countdownText = '';
+      if (days > 0) {
+        countdownText = `⏳ 還有 ${days} 天 ${hours} 小時`;
+        setCountdownClass('countdown-safe');
+      } else if (hours > 1) {
+        countdownText = `⏳ 還有 ${hours} 小時 ${minutes} 分鐘`;
+        setCountdownClass('countdown-normal');
+      } else if (hours === 1) {
+        countdownText = `⏳ 還有 1 小時 ${minutes} 分鐘`;
+        setCountdownClass('countdown-warn');
+      } else if (minutes > 5) {
+        countdownText = `⏳ 還有 ${minutes} 分鐘 ${seconds} 秒`;
+        setCountdownClass('countdown-danger');
+      } else {
+        countdownText = `🚨 最後 ${minutes} 分 ${seconds} 秒！`;
+        setCountdownClass('countdown-critical');
+      }
+
+      setCountdown(countdownText);
     }, 1000);
+
     return () => clearInterval(timer);
   }, [formData]);
 
-  // 生成 .ics
-  const generateICS = (date, time, name, address) => {
+  // 生成 ICS 檔案內容
+  const generateICS = (date, time, name, address, description) => {
     const dateObj = new Date(`${date}T${time}`);
     const start = dateObj.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const end = new Date(dateObj.getTime() + 3600000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const uid = `${Date.now()}@calendar-generator`;
+    const uid = `${Date.now()}@calendar-generator.com`;
     const stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+    
+    const eventDescription = [
+      description || '集合活動',
+      '',
+      `地圖連結：${mapUrl}`,
+      `地址：${address}`
+    ].join('\\n');
+
     return [
-      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TourHub//EN',
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//TourHub Calendar Generator//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      `UID:${uid}`, `DTSTAMP:${stamp}`, `DTSTART:${start}`, `DTEND:${end}`,
-      `SUMMARY:${name || '集合活動'}`, `LOCATION:${address}`, `DESCRIPTION=地圖：${mapUrl}`,
-      'END:VEVENT', 'END:VCALENDAR'
+      `UID:${uid}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${name || '集合活動'}`,
+      `LOCATION:${address}`,
+      `DESCRIPTION:${eventDescription}`,
+      'STATUS:CONFIRMED',
+      'TRANSP:OPAQUE',
+      'END:VEVENT',
+      'END:VCALENDAR'
     ].join('\r\n');
   };
 
+  // 下載 ICS 檔案
   const downloadICS = () => {
-    const { date, time, name, address } = formData;
-    if (!date || !time || !address) return alert('請填寫完整');
-    const blob = new Blob([generateICS(date, time, name, address)], { type: 'text/calendar' });
+    const { date, time, name, address, description } = formData;
+    if (!date || !time || !address) {
+      alert('請填寫日期、時間和地址');
+      return;
+    }
+
+    const icsContent = generateICS(date, time, name, address, description);
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${name || '集合活動'}.ics`;
+    link.download = `${name || '集合活動'}_${date.replace(/-/g, '')}.ics`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
   };
 
+  // 加入 Google Calendar
   const addToGoogleCalendar = () => {
-    const { date, time, name, address } = formData;
-    if (!date || !time || !address) return alert('請填寫完整');
-    const start = new Date(`${date}T${time}`).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const end = new Date(new Date(`${date}T${time}`).getTime() + 3600000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const text = encodeURIComponent(name || '集合活動');
-    const details = encodeURIComponent('集合通知');
-    const location = encodeURIComponent(address);
-    const calendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&location=${location}&sf=true&output=xml`;
+    const { date, time, name, address, description } = formData;
+    if (!date || !time || !address) {
+      alert('請填寫日期、時間和地址');
+      return;
+    }
+
+    const startTime = new Date(`${date}T${time}`);
+    const endTime = new Date(startTime.getTime() + 3600000); // 預設 1 小時
+    
+    const start = startTime.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const end = endTime.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: name || '集合活動',
+      dates: `${start}/${end}`,
+      details: description || '集合通知',
+      location: address,
+      sf: 'true',
+      output: 'xml'
+    });
+
+    const calendarUrl = `https://www.google.com/calendar/render?${params.toString()}`;
     window.open(calendarUrl, '_blank');
   };
 
+  // 複製活動資訊
+  const copyInfo = async () => {
+    const { date, time, name, address, description, participants } = formData;
+    if (!date || !time || !address) {
+      alert('請填寫日期、時間和地址');
+      return;
+    }
+
+    const info = [
+      `📍 ${name || '集合活動'}`,
+      `📅 ${new Date(`${date}T${time}`).toLocaleDateString('zh-TW', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'short'
+      })}`,
+      `🕒 ${time}`,
+      `📍 ${address}`,
+      description ? `📝 ${description}` : '',
+      participants ? `👥 參加者：${participants}` : '',
+      `🗺️ 地圖：https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    ].filter(Boolean).join('\n');
+
+    try {
+      await navigator.clipboard.writeText(info);
+      alert('資訊已複製到剪貼簿！');
+    } catch (error) {
+      console.error('複製失敗:', error);
+      alert('複製失敗，請手動複製');
+    }
+  };
+
+  // 分享到 LINE
   const shareInfo = async () => {
-    const { date, time, name, address } = formData;
-    const msg = {
+    const { date, time, name, address, description, participants } = formData;
+    if (!date || !time || !address) {
+      alert('請填寫日期、時間和地址');
+      return;
+    }
+
+    if (!isLiffReady) {
+      alert('LINE 功能尚未準備就緒');
+      return;
+    }
+
+    const target = new Date(`${date}T${time}`);
+    const now = new Date();
+    const diff = target - now;
+    
+    let countdownText = '';
+    let countdownColor = '#dc2626';
+    
+    if (diff <= 0) {
+      countdownText = '⏰ 已過期';
+      countdownColor = '#6b7280';
+    } else {
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+      
+      if (days > 0) {
+        countdownText = `⏳ 還有 ${days} 天 ${hours} 小時`;
+        countdownColor = '#059669';
+      } else if (hours > 1) {
+        countdownText = `⏳ 還有 ${hours} 小時 ${minutes} 分鐘`;
+        countdownColor = '#0891b2';
+      } else if (hours === 1) {
+        countdownText = `⏳ 還有 1 小時 ${minutes} 分鐘`;
+        countdownColor = '#ea580c';
+      } else if (minutes > 5) {
+        countdownText = `⏳ 還有 ${minutes} 分鐘 ${seconds} 秒`;
+        countdownColor = '#dc2626';
+      } else {
+        countdownText = `🚨 最後 ${minutes} 分 ${seconds} 秒！`;
+        countdownColor = '#dc2626';
+      }
+    }
+
+    const flexMessage = {
       type: 'flex',
-      altText: '集合通知',
+      altText: `集合通知 - ${name || '未命名地點'}`,
       contents: {
         type: 'bubble',
+        styles: {
+          body: {
+            backgroundColor: '#f8fafc'
+          }
+        },
         body: {
-          type: 'box', layout: 'vertical', spacing: 'md',
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'md',
+          paddingAll: 'lg',
           contents: [
-            { type: 'text', text: `📍 ${name || '集合活動'}`, weight: 'bold', size: 'lg', color: '#1f2937' },
+            // 標題區域
             {
-              type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+              type: 'box',
+              layout: 'vertical',
+              spacing: 'sm',
+              contents: [
                 {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '集合日期', color: '#6b7280', size: 'sm', flex: 1 },
-                    { type: 'text', text: date, color: '#111827', size: 'sm', flex: 4 }
-                  ]
+                  type: 'text',
+                  text: '📍 集合通知',
+                  weight: 'bold',
+                  size: 'xl',
+                  color: '#1f2937'
                 },
                 {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '集合時間', color: '#6b7280', size: 'sm', flex: 1 },
-                    { type: 'text', text: time, color: '#111827', size: 'sm', flex: 4 }
-                  ]
-                },
-                {
-                  type: 'box', layout: 'baseline', spacing: 'sm',
-                  contents: [
-                    { type: 'text', text: '集合地址', color: '#6b7280', size: 'sm', flex: 1 },
-                    { type: 'text', text: address, color: '#111827', size: 'sm', flex: 4 }
-                  ]
+                  type: 'text',
+                  text: name || '未命名地點',
+                  weight: 'bold',
+                  size: 'lg',
+                  color: '#374151',
+                  wrap: true
                 }
               ]
-            }
+            },
+            
+            // 分隔線
+            {
+              type: 'separator',
+              margin: 'md'
+            },
+            
+            // 資訊區域
+            {
+              type: 'box',
+              layout: 'vertical',
+              spacing: 'sm',
+              margin: 'md',
+              contents: [
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: '📅',
+                      size: 'sm',
+                      flex: 0
+                    },
+                    {
+                      type: 'text',
+                      text: new Date(`${date}T${time}`).toLocaleDateString('zh-TW', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        weekday: 'short'
+                      }),
+                      size: 'sm',
+                      color: '#111827',
+                      flex: 4,
+                      margin: 'sm'
+                    }
+                  ]
+                },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: '🕒',
+                      size: 'sm',
+                      flex: 0
+                    },
+                    {
+                      type: 'text',
+                      text: time,
+                      size: 'sm',
+                      color: '#111827',
+                      flex: 4,
+                      margin: 'sm'
+                    }
+                  ]
+                },
+                {
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: '📍',
+                      size: 'sm',
+                      flex: 0
+                    },
+                    {
+                      type: 'text',
+                      text: address,
+                      size: 'sm',
+                      color: '#111827',
+                      wrap: true,
+                      flex: 4,
+                      margin: 'sm'
+                    }
+                  ]
+                },
+                ...(description ? [{
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: '📝',
+                      size: 'sm',
+                      flex: 0
+                    },
+                    {
+                      type: 'text',
+                      text: description,
+                      size: 'sm',
+                      color: '#111827',
+                      wrap: true,
+                      flex: 4,
+                      margin: 'sm'
+                    }
+                  ]
+                }] : []),
+                ...(participants ? [{
+                  type: 'box',
+                  layout: 'horizontal',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: '👥',
+                      size: 'sm',
+                      flex: 0
+                    },
+                    {
+                      type: 'text',
+                      text: `參加者：${participants}`,
+                      size: 'sm',
+                      color: '#111827',
+                      wrap: true,
+                      flex: 4,
+                      margin: 'sm'
+                    }
+                  ]
+                }] : [])
+              ]
+            },
+            
+            // 倒數計時區域
+            {
+              type: 'box',
+              layout: 'vertical',
+              backgroundColor: countdownColor === '#6b7280' ? '#f3f4f6' : '#fef2f2',
+              cornerRadius: 'md',
+              paddingAll: 'md',
+              margin: 'md',
+              contents: [
+                {
+                  type: 'text',
+                  text: countdownText,
+                  weight: 'bold',
+                  size: 'md',
+                  color: countdownColor,
+                  align: 'center',
+                  wrap: true
+                }
+              ]
+            },
+            
+            // 提醒文字
+            ...(diff > 0 && diff < 24 * 60 * 60 * 1000 ? [{
+              type: 'text',
+              text: '💡 建議提前 10-15 分鐘出發',
+              size: 'xs',
+              color: '#6b7280',
+              wrap: true,
+              margin: 'sm',
+              align: 'center'
+            }] : [])
           ]
         },
         footer: {
-          type: 'box', layout: 'vertical', spacing: 'sm',
-          contents: [{
-            type: 'button', style: 'primary', color: '#6366f1',
-            action: {
-              type: 'uri', label: '打開地圖',
-              uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'button',
+              style: 'primary',
+              height: 'sm',
+              color: '#4f46e5',
+              action: {
+                type: 'uri',
+                label: '🗺️ 查看地圖',
+                uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+              }
+            },
+            {
+              type: 'button',
+              style: 'secondary',
+              height: 'sm',
+              action: {
+                type: 'uri',
+                label: '🚗 開始導航',
+                uri: `https://maps.google.com/maps?daddr=${encodeURIComponent(address)}`
+              }
             }
-          }]
+          ]
         }
       }
     };
+
     try {
-      await liff.shareTargetPicker([msg]);
-    } catch (e) {
-      alert('分享失敗：' + e.message);
+      if (liff.isApiAvailable('shareTargetPicker')) {
+        await liff.shareTargetPicker([flexMessage]);
+      } else {
+        alert('此環境不支援 LINE 分享功能');
+      }
+    } catch (error) {
+      console.error('分享失敗:', error);
+      alert('分享失敗：' + error.message);
     }
+  };
+
+  // 開啟地圖
+  const openMap = () => {
+    if (!formData.address) {
+      alert('請先設定地址');
+      return;
+    }
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`;
+    window.open(mapUrl, '_blank');
+  };
+
+  // 開始導航
+  const startNavigation = () => {
+    if (!formData.address) {
+      alert('請先設定地址');
+      return;
+    }
+    const navUrl = `https://maps.google.com/maps?daddr=${encodeURIComponent(formData.address)}`;
+    window.open(navUrl, '_blank');
   };
 
   return (
     <div className="container">
       {userProfile && (
         <div className="user-card">
-          <img src={userProfile.pictureUrl} alt="avatar" className="user-avatar" />
+          <img src={userProfile.pictureUrl} alt="用戶頭像" className="user-avatar" />
           <span>Hi, {userProfile.displayName}</span>
         </div>
       )}
 
       <div className="content-wrapper">
         <div className="form-card">
-          <label>集合名稱</label>
-          <input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="如：捷運站門口" />
-          <label>集合日期</label>
-          <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-          <label>集合時間</label>
-          <input type="time" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} />
-          <label>集合地址</label>
-          <input value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} placeholder="點地圖或手動輸入" />
+          <h2>📅 集合活動設定</h2>
+          
+          <div className="form-group">
+            <label htmlFor="name">集合名稱</label>
+            <input 
+              id="name"
+              type="text"
+              value={formData.name} 
+              onChange={e => setFormData({ ...formData, name: e.target.value })} 
+              placeholder="例如：捷運站門口集合"
+            />
+          </div>
 
-          <div className="countdown">{countdown}</div>
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="date">集合日期</label>
+              <input 
+                id="date"
+                type="date" 
+                value={formData.date} 
+                onChange={e => setFormData({ ...formData, date: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="time">集合時間</label>
+              <input 
+                id="time"
+                type="time" 
+                value={formData.time} 
+                onChange={e => setFormData({ ...formData, time: e.target.value })}
+              />
+            </div>
+          </div>
 
-          <button className="btn btn-download" onClick={downloadICS}><Download size={16} />下載 .ics</button>
-          <button className="btn btn-calendar" onClick={addToGoogleCalendar}><Calendar size={16} />加入 Google Calendar</button>
-          <button className="btn btn-map" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`)}><MapPin size={16} />查看地圖</button>
-          <button className="btn btn-copy" onClick={() => navigator.clipboard.writeText(`${formData.name}\n📅 ${formData.date} ${formData.time}\n📍 ${formData.address}`)}><Copy size={16} />複製資訊</button>
-          <button className="btn btn-share" onClick={shareInfo}><Share2 size={16} />分享到 LINE</button>
+          <div className="form-group">
+            <label htmlFor="address">集合地址</label>
+            <input 
+              id="address"
+              type="text"
+              value={formData.address} 
+              onChange={e => setFormData({ ...formData, address: e.target.value })} 
+              placeholder="點選地圖或手動輸入地址"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="description">活動說明（選填）</label>
+            <textarea 
+              id="description"
+              value={formData.description} 
+              onChange={e => setFormData({ ...formData, description: e.target.value })} 
+              placeholder="例如：記得帶雨傘、穿輕便服裝"
+              rows="3"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="participants">參加者（選填）</label>
+            <input 
+              id="participants"
+              type="text"
+              value={formData.participants} 
+              onChange={e => setFormData({ ...formData, participants: e.target.value })} 
+              placeholder="例如：小明、小美、小華"
+            />
+          </div>
+
+          {countdown && (
+            <div className={`countdown ${countdownClass}`}>
+              <Clock size={16} />
+              {countdown}
+            </div>
+          )}
+
+          <div className="button-grid">
+            <button className="btn btn-download" onClick={downloadICS}>
+              <Download size={16} />
+              下載 .ics
+            </button>
+            <button className="btn btn-calendar" onClick={addToGoogleCalendar}>
+              <Calendar size={16} />
+              Google Calendar
+            </button>
+            <button className="btn btn-map" onClick={openMap}>
+              <MapPin size={16} />
+              查看地圖
+            </button>
+            <button className="btn btn-navigation" onClick={startNavigation}>
+              <Navigation size={16} />
+              開始導航
+            </button>
+            <button className="btn btn-copy" onClick={copyInfo}>
+              <Copy size={16} />
+              複製資訊
+            </button>
+            <button className="btn btn-share" onClick={shareInfo} disabled={!isLiffReady}>
+              <Share2 size={16} />
+              分享到 LINE
+            </button>
+          </div>
         </div>
 
         <div className="map-box">
-          <h3>地圖選擇地點</h3>
+          <h3>🗺️ 地圖選擇地點</h3>
+          <input 
+            id="map-search"
+            type="text" 
+            className="map-search"
+            placeholder="搜尋地點..."
+          />
           <div id="map" className="map" />
+          <p className="map-hint">💡 點擊地圖選擇集合地點</p>
         </div>
       </div>
     </div>
