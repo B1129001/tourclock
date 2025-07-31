@@ -15,11 +15,11 @@ const CalendarGenerator = () => {
   const [countdown, setCountdown] = useState('');
   const [countdownClass, setCountdownClass] = useState('countdown-red');
   const [isLiffReady, setIsLiffReady] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
-  const [showResults, setShowResults] = useState(false);
+  const [nameSearchResults, setNameSearchResults] = useState([]);
+  const [showNameResults, setShowNameResults] = useState(false);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
-  const searchBoxRef = useRef(null);
+  const nameSearchBoxRef = useRef(null);
 
   // 初始化 LIFF
   useEffect(() => {
@@ -143,8 +143,26 @@ const CalendarGenerator = () => {
     setTimeout(initializeMap, 100);
   }, []);
 
-  // 選擇搜尋結果中的地點
-  const selectPlace = (place) => {
+  // 集合名稱搜尋功能
+  const searchPlacesForName = (query) => {
+    if (!query.trim() || !window.google?.maps?.places) return;
+
+    const service = new window.google.maps.places.PlacesService(mapRef.current);
+    const request = {
+      query: query,
+      fields: ['name', 'formatted_address', 'geometry', 'place_id', 'types', 'rating', 'user_ratings_total', 'opening_hours'],
+    };
+
+    service.textSearch(request, (results, status) => {
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+        setNameSearchResults(results.slice(0, 5));
+        setShowNameResults(true);
+      }
+    });
+  };
+
+  // 選擇集合名稱搜尋結果
+  const selectNamePlace = (place) => {
     if (!place.geometry || !place.geometry.location) return;
 
     // 清除之前的標記
@@ -163,25 +181,32 @@ const CalendarGenerator = () => {
     mapRef.current.setCenter(place.geometry.location);
     mapRef.current.setZoom(17);
 
-    // 更新表單數據
+    // 更新表單數據 - 集合名稱用 place.name，地址用精確地址
     setFormData(prev => ({
       ...prev,
-      address: place.formatted_address,
-      name: prev.name || place.name
+      name: place.name,
+      address: place.formatted_address
     }));
 
     // 隱藏搜尋結果
-    setShowResults(false);
+    setShowNameResults(false);
+  };
+
+  // 處理集合名稱輸入變化
+  const handleNameInputChange = (e) => {
+    const value = e.target.value;
+    setFormData({ ...formData, name: value });
     
-    // 清空搜尋框
-    if (searchBoxRef.current) {
-      document.getElementById('map-search').value = '';
+    if (value.length > 2) {
+      searchPlacesForName(value);
+    } else {
+      setShowNameResults(false);
     }
   };
 
-  // 隱藏搜尋結果
-  const hideResults = () => {
-    setTimeout(() => setShowResults(false), 200); // 延遲以允許點擊
+  // 隱藏集合名稱搜尋結果
+  const hideNameResults = () => {
+    setTimeout(() => setShowNameResults(false), 200);
   };
 
     // 延遲初始化以確保 DOM 元素存在
@@ -633,13 +658,59 @@ const CalendarGenerator = () => {
           
           <div className="form-group">
             <label htmlFor="name">集合名稱</label>
-            <input 
-              id="name"
-              type="text"
-              value={formData.name} 
-              onChange={e => setFormData({ ...formData, name: e.target.value })} 
-              placeholder="例如：捷運站門口集合"
-            />
+            <div className="search-container">
+              <input 
+                id="name"
+                type="text"
+                value={formData.name} 
+                onChange={handleNameInputChange}
+                onBlur={hideNameResults}
+                onFocus={() => nameSearchResults.length > 0 && setShowNameResults(true)}
+                placeholder="搜尋地點名稱，例如：台北101、捷運台北車站"
+              />
+              {showNameResults && nameSearchResults.length > 0 && (
+                <div className="search-results">
+                  {nameSearchResults.map((place, index) => (
+                    <div 
+                      key={`${place.place_id}-${index}`}
+                      className="search-result-item"
+                      onClick={() => selectNamePlace(place)}
+                    >
+                      <div className="result-icon">
+                        {place.types?.includes('restaurant') ? '🍽️' :
+                         place.types?.includes('subway_station') ? '🚇' :
+                         place.types?.includes('bus_station') ? '🚌' :
+                         place.types?.includes('train_station') ? '🚆' :
+                         place.types?.includes('school') ? '🏫' :
+                         place.types?.includes('hospital') ? '🏥' :
+                         place.types?.includes('shopping_mall') ? '🛍️' :
+                         place.types?.includes('park') ? '🌳' :
+                         place.types?.includes('gas_station') ? '⛽' :
+                         place.types?.includes('bank') ? '🏦' :
+                         place.types?.includes('pharmacy') ? '💊' :
+                         place.types?.includes('convenience_store') ? '🏪' :
+                         '📍'}
+                      </div>
+                      <div className="result-info">
+                        <div className="result-name">{place.name}</div>
+                        <div className="result-address">{place.formatted_address}</div>
+                        {place.rating && (
+                          <div className="result-rating">
+                            ⭐ {place.rating} 
+                            {place.user_ratings_total && ` (${place.user_ratings_total})`}
+                          </div>
+                        )}
+                        {place.opening_hours?.open_now !== undefined && (
+                          <div className={`result-status ${place.opening_hours.open_now ? 'open' : 'closed'}`}>
+                            {place.opening_hours.open_now ? '🟢 營業中' : '🔴 已休息'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="form-row">
@@ -671,8 +742,10 @@ const CalendarGenerator = () => {
               type="text"
               value={formData.address} 
               onChange={e => setFormData({ ...formData, address: e.target.value })} 
-              placeholder="點選地圖或手動輸入地址"
+              placeholder="請點選地圖或手動輸入精確地址"
+              readOnly
             />
+            <p className="address-hint">💡 請點選地圖上的位置來獲得精確地址</p>
           </div>
 
           <div className="form-group">
@@ -718,61 +791,9 @@ const CalendarGenerator = () => {
         </div>
 
         <div className="map-box">
-          <h3>🗺️ 地圖選擇地點</h3>
-          <div className="search-container">
-            <input 
-              id="map-search"
-              type="text" 
-              className="map-search"
-              placeholder="搜尋地點..."
-              onBlur={hideResults}
-              onFocus={() => searchResults.length > 0 && setShowResults(true)}
-            />
-            {showResults && searchResults.length > 0 && (
-              <div className="search-results">
-                {searchResults.map((place, index) => (
-                  <div 
-                    key={`${place.place_id}-${index}`}
-                    className="search-result-item"
-                    onClick={() => selectPlace(place)}
-                  >
-                    <div className="result-icon">
-                      {place.types?.includes('restaurant') ? '🍽️' :
-                       place.types?.includes('subway_station') ? '🚇' :
-                       place.types?.includes('bus_station') ? '🚌' :
-                       place.types?.includes('train_station') ? '🚆' :
-                       place.types?.includes('school') ? '🏫' :
-                       place.types?.includes('hospital') ? '🏥' :
-                       place.types?.includes('shopping_mall') ? '🛍️' :
-                       place.types?.includes('park') ? '🌳' :
-                       place.types?.includes('gas_station') ? '⛽' :
-                       place.types?.includes('bank') ? '🏦' :
-                       place.types?.includes('pharmacy') ? '💊' :
-                       place.types?.includes('convenience_store') ? '🏪' :
-                       '📍'}
-                    </div>
-                    <div className="result-info">
-                      <div className="result-name">{place.name}</div>
-                      <div className="result-address">{place.formatted_address}</div>
-                      {place.rating && (
-                        <div className="result-rating">
-                          ⭐ {place.rating} 
-                          {place.user_ratings_total && ` (${place.user_ratings_total})`}
-                        </div>
-                      )}
-                      {place.opening_hours?.open_now !== undefined && (
-                        <div className={`result-status ${place.opening_hours.open_now ? 'open' : 'closed'}`}>
-                          {place.opening_hours.open_now ? '🟢 營業中' : '🔴 已休息'}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <h3>🗺️ 地圖選擇精確位置</h3>
           <div id="map" className="map" />
-          <p className="map-hint">💡 搜尋地點或點擊地圖選擇集合地點</p>
+          <p className="map-hint">💡 點擊地圖來選擇精確的集合位置</p>
         </div>
       </div>
     </div>
