@@ -666,7 +666,7 @@ const CalendarGenerator = () => {
                 onChange={handleNameInputChange}
                 onBlur={hideNameResults}
                 onFocus={() => nameSearchResults.length > 0 && setShowNameResults(true)}
-                placeholder="搜尋地點名稱，例如：台北101、捷運台北車站"
+                placeholder="搜尋地點名稱
               />
               {showNameResults && nameSearchResults.length > 0 && (
                 <div className="search-results">
@@ -755,7 +755,7 @@ const CalendarGenerator = () => {
               type="text"
               value={formData.participants} 
               onChange={e => setFormData({ ...formData, participants: e.target.value })} 
-              placeholder="例如：小明、小美、小華"
+              placeholder="輸入人名"
             />
           </div>
 
