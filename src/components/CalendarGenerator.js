@@ -15,8 +15,11 @@ const CalendarGenerator = () => {
   const [countdown, setCountdown] = useState('');
   const [countdownClass, setCountdownClass] = useState('countdown-red');
   const [isLiffReady, setIsLiffReady] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
+  const searchBoxRef = useRef(null);
 
   // 初始化 LIFF
   useEffect(() => {
@@ -110,37 +113,76 @@ const CalendarGenerator = () => {
       const searchBox = new window.google.maps.places.SearchBox(
         document.getElementById('map-search')
       );
+      searchBoxRef.current = searchBox;
       
       searchBox.addListener('places_changed', () => {
         const places = searchBox.getPlaces();
         if (places.length === 0) return;
 
-        const place = places[0];
-        if (!place.geometry || !place.geometry.location) return;
+        // 顯示搜尋結果
+        setSearchResults(places.slice(0, 5)); // 限制顯示 5 個結果
+        setShowResults(true);
 
-        // 清除之前的標記
-        if (markerRef.current) {
-          markerRef.current.setMap(null);
-        }
-
-        // 添加標記
-        markerRef.current = new window.google.maps.Marker({
-          position: place.geometry.location,
-          map: mapRef.current
+        // 調整地圖視野以包含所有結果
+        const bounds = new window.google.maps.LatLngBounds();
+        places.forEach(place => {
+          if (place.geometry && place.geometry.location) {
+            bounds.extend(place.geometry.location);
+          }
         });
+        mapRef.current.fitBounds(bounds);
+      });
 
-        // 設置地圖中心和縮放
-        mapRef.current.setCenter(place.geometry.location);
-        mapRef.current.setZoom(17);
-
-        // 更新表單數據
-        setFormData(prev => ({
-          ...prev,
-          address: place.formatted_address,
-          name: prev.name || place.name
-        }));
+      // 點擊地圖時隱藏搜尋結果
+      mapRef.current.addListener('click', () => {
+        setShowResults(false);
       });
     }
+
+    // 延遲初始化以確保 DOM 元素存在
+    setTimeout(initializeMap, 100);
+  }, []);
+
+  // 選擇搜尋結果中的地點
+  const selectPlace = (place) => {
+    if (!place.geometry || !place.geometry.location) return;
+
+    // 清除之前的標記
+    if (markerRef.current) {
+      markerRef.current.setMap(null);
+    }
+
+    // 添加標記
+    markerRef.current = new window.google.maps.Marker({
+      position: place.geometry.location,
+      map: mapRef.current,
+      animation: window.google.maps.Animation.DROP
+    });
+
+    // 設置地圖中心和縮放
+    mapRef.current.setCenter(place.geometry.location);
+    mapRef.current.setZoom(17);
+
+    // 更新表單數據
+    setFormData(prev => ({
+      ...prev,
+      address: place.formatted_address,
+      name: prev.name || place.name
+    }));
+
+    // 隱藏搜尋結果
+    setShowResults(false);
+    
+    // 清空搜尋框
+    if (searchBoxRef.current) {
+      document.getElementById('map-search').value = '';
+    }
+  };
+
+  // 隱藏搜尋結果
+  const hideResults = () => {
+    setTimeout(() => setShowResults(false), 200); // 延遲以允許點擊
+  };
 
     // 延遲初始化以確保 DOM 元素存在
     setTimeout(initializeMap, 100);
@@ -677,14 +719,60 @@ const CalendarGenerator = () => {
 
         <div className="map-box">
           <h3>🗺️ 地圖選擇地點</h3>
-          <input 
-            id="map-search"
-            type="text" 
-            className="map-search"
-            placeholder="搜尋地點..."
-          />
+          <div className="search-container">
+            <input 
+              id="map-search"
+              type="text" 
+              className="map-search"
+              placeholder="搜尋地點..."
+              onBlur={hideResults}
+              onFocus={() => searchResults.length > 0 && setShowResults(true)}
+            />
+            {showResults && searchResults.length > 0 && (
+              <div className="search-results">
+                {searchResults.map((place, index) => (
+                  <div 
+                    key={`${place.place_id}-${index}`}
+                    className="search-result-item"
+                    onClick={() => selectPlace(place)}
+                  >
+                    <div className="result-icon">
+                      {place.types?.includes('restaurant') ? '🍽️' :
+                       place.types?.includes('subway_station') ? '🚇' :
+                       place.types?.includes('bus_station') ? '🚌' :
+                       place.types?.includes('train_station') ? '🚆' :
+                       place.types?.includes('school') ? '🏫' :
+                       place.types?.includes('hospital') ? '🏥' :
+                       place.types?.includes('shopping_mall') ? '🛍️' :
+                       place.types?.includes('park') ? '🌳' :
+                       place.types?.includes('gas_station') ? '⛽' :
+                       place.types?.includes('bank') ? '🏦' :
+                       place.types?.includes('pharmacy') ? '💊' :
+                       place.types?.includes('convenience_store') ? '🏪' :
+                       '📍'}
+                    </div>
+                    <div className="result-info">
+                      <div className="result-name">{place.name}</div>
+                      <div className="result-address">{place.formatted_address}</div>
+                      {place.rating && (
+                        <div className="result-rating">
+                          ⭐ {place.rating} 
+                          {place.user_ratings_total && ` (${place.user_ratings_total})`}
+                        </div>
+                      )}
+                      {place.opening_hours?.open_now !== undefined && (
+                        <div className={`result-status ${place.opening_hours.open_now ? 'open' : 'closed'}`}>
+                          {place.opening_hours.open_now ? '🟢 營業中' : '🔴 已休息'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div id="map" className="map" />
-          <p className="map-hint">💡 點擊地圖選擇集合地點</p>
+          <p className="map-hint">💡 搜尋地點或點擊地圖選擇集合地點</p>
         </div>
       </div>
     </div>
