@@ -1,842 +1,475 @@
-import React, { useState, useEffect, useRef } from 'react';
-import liff from '@line/liff';
-import { Download, MapPin, Share2, Copy, Calendar, Clock, Users } from 'lucide-react';
-import './CalendarGenerator.css';
+/* 整體背景與容器 */
+.container {
+  padding: 1rem;
+  min-height: 100vh;
+  background: linear-gradient(to bottom right, #fdfdfd, #f0f4ff);
+  font-family: 'Helvetica Neue', sans-serif;
+}
 
-const CalendarGenerator = () => {
-  const [formData, setFormData] = useState({ 
-    date: '', 
-    time: '', 
-    name: '', 
-    address: '',
-    participants: ''
-  });
-  const [userProfile, setUserProfile] = useState(null);
-  const [countdown, setCountdown] = useState('');
-  const [countdownClass, setCountdownClass] = useState('countdown-red');
-  const [isLiffReady, setIsLiffReady] = useState(false);
-  const [nameSearchResults, setNameSearchResults] = useState([]);
-  const [showNameResults, setShowNameResults] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
-  const [showResults, setShowResults] = useState(false);
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const mapRef = useRef(null);
-  const markerRef = useRef(null);
-  const nameSearchBoxRef = useRef(null);
-  const searchBoxRef = useRef(null);
+/* 使用者資訊卡片 */
+.user-card {
+  background: white;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+  margin: 1rem auto;
+  justify-content: center;
+  max-width: 90%;
+}
 
-  // 檢查 Google Maps API 是否已載入
-  const checkGoogleMapsLoaded = () => {
-    return new Promise((resolve, reject) => {
-      if (window.google && window.google.maps) {
-        resolve(true);
-        return;
-      }
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  object-fit: cover;
+}
 
-      let attempts = 0;
-      const maxAttempts = 50; // 5 秒超時
-      const checkInterval = setInterval(() => {
-        attempts++;
-        if (window.google && window.google.maps) {
-          clearInterval(checkInterval);
-          resolve(true);
-        } else if (attempts >= maxAttempts) {
-          clearInterval(checkInterval);
-          reject(new Error('Google Maps API 載入超時'));
-        }
-      }, 100);
-    });
-  };
+/* 表單與地圖主體排版 */
+.content-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  justify-content: center;
+  align-items: flex-start;
+}
 
-  // 初始化 LIFF
-  useEffect(() => {
-    const initLiff = async () => {
-      try {
-        const liffId = process.env.REACT_APP_LIFF_ID;
-        if (!liffId) {
-          console.warn('LIFF ID 未設定，跳過 LIFF 初始化');
-          setIsLiffReady(false);
-          return;
-        }
+/* 表單區塊樣式 */
+.form-card {
+  background: #ffffff;
+  padding: 2rem;
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  flex: 1 1 350px;
+  max-width: 500px;
+  box-sizing: border-box;
+}
 
-        await liff.init({ liffId });
-        setIsLiffReady(true);
-        
-        if (!liff.isLoggedIn()) {
-          liff.login();
-        } else {
-          const profile = await liff.getProfile();
-          setUserProfile(profile);
-        }
-      } catch (error) {
-        console.error('LIFF 初始化失敗:', error);
-        setIsLiffReady(false);
-      }
-    };
+.form-card h2 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: #1f2937;
+  font-size: 1.5rem;
+  text-align: center;
+}
 
-    initLiff();
-  }, []);
+/* 表單群組與排版 */
+.form-group {
+  margin-bottom: 1rem;
+}
 
-  // 初始化地圖
-  useEffect(() => {
-    const initializeMap = async () => {
-      try {
-        await checkGoogleMapsLoaded();
-        setMapLoaded(true);
-        
-        // 獲取用戶位置
-        const getCurrentPosition = () => {
-          return new Promise((resolve, reject) => {
-            if (!navigator.geolocation) {
-              reject(new Error('不支援地理位置服務'));
-              return;
-            }
+.form-row {
+  display: flex;
+  gap: 1rem;
+}
 
-            navigator.geolocation.getCurrentPosition(
-              (position) => {
-                resolve({
-                  lat: position.coords.latitude,
-                  lng: position.coords.longitude
-                });
-              },
-              (error) => {
-                console.log('無法獲取當前位置:', error);
-                // 預設台北101位置
-                resolve({ lat: 25.0478, lng: 121.5319 });
-              }
-            );
-          });
-        };
+.form-row .form-group {
+  flex: 1;
+}
 
-        const position = await getCurrentPosition();
-        initMap(position);
-      } catch (error) {
-        console.error('地圖初始化失敗:', error);
-        setMapLoaded(false);
-      }
-    };
+.form-card label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  color: #374151;
+  font-size: 0.9rem;
+}
 
-    const initMap = (center) => {
-      const mapElement = document.getElementById('map');
-      if (!mapElement) return;
-      
-      mapRef.current = new window.google.maps.Map(mapElement, {
-        center,
-        zoom: 15,
-        styles: [
-          {
-            featureType: 'poi',
-            elementType: 'labels',
-            stylers: [{ visibility: 'on' }]
-          }
-        ]
-      });
+.form-card input,
+.form-card textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #d1d5db;
+  font-size: 1rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
 
-      // 地圖點擊事件
-      mapRef.current.addListener('click', (event) => {
-        const latLng = event.latLng;
-        
-        // 清除之前的標記
-        if (markerRef.current) {
-          markerRef.current.setMap(null);
-        }
-        
-        // 添加新標記
-        markerRef.current = new window.google.maps.Marker({
-          position: latLng,
-          map: mapRef.current,
-          animation: window.google.maps.Animation.DROP
-        });
+.form-card input:focus,
+.form-card textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
 
-        // 反向地理編碼
-        const geocoder = new window.google.maps.Geocoder();
-        geocoder.geocode({ location: latLng }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            const result = results[0];
-            const address = result.formatted_address;
-            const placeName = result.address_components?.[0]?.long_name || '';
-            
-            setFormData(prev => ({
-              ...prev,
-              address: address,
-              name: prev.name || placeName
-            }));
-          }
-        });
-      });
+.form-card input[readonly] {
+  background-color: #f9fafb;
+  cursor: not-allowed;
+  color: #6b7280;
+}
 
-      // 地圖搜索框功能
-      const mapSearchElement = document.getElementById('map-search');
-      if (mapSearchElement && window.google.maps.places) {
-        const searchBox = new window.google.maps.places.SearchBox(mapSearchElement);
-        searchBoxRef.current = searchBox;
-        
-        searchBox.addListener('places_changed', () => {
-          const places = searchBox.getPlaces();
-          if (places.length === 0) return;
+.address-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
 
-          setSearchResults(places.slice(0, 5));
-          setShowResults(true);
+/* 搜尋容器與結果 */
+.search-container {
+  position: relative;
+}
 
-          const bounds = new window.google.maps.LatLngBounds();
-          places.forEach(place => {
-            if (place.geometry && place.geometry.location) {
-              bounds.extend(place.geometry.location);
-            }
-          });
-          mapRef.current.fitBounds(bounds);
-        });
-      }
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1000;
+  margin-top: 4px;
+}
 
-      // 點擊地圖時隱藏搜尋結果
-      mapRef.current.addListener('click', () => {
-        setShowResults(false);
-      });
-    };
+.search-result-item {
+  display: flex;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.15s ease;
+}
 
-    // 延遲初始化以確保 DOM 元素存在
-    const timer = setTimeout(initializeMap, 100);
-    
-    return () => clearTimeout(timer);
-  }, []);
+.search-result-item:last-child {
+  border-bottom: none;
+}
 
-  // 集合名稱搜尋功能
-  const searchPlacesForName = (query) => {
-    if (!query.trim() || !window.google?.maps?.places || !mapRef.current) return;
+.search-result-item:hover {
+  background-color: #f8fafc;
+}
 
-    const service = new window.google.maps.places.PlacesService(mapRef.current);
-    const request = {
-      query: query,
-      fields: ['name', 'formatted_address', 'geometry', 'place_id', 'types', 'rating', 'user_ratings_total', 'opening_hours'],
-    };
+.result-icon {
+  font-size: 20px;
+  margin-right: 12px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
 
-    service.textSearch(request, (results, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-        setNameSearchResults(results.slice(0, 5));
-        setShowNameResults(true);
-      }
-    });
-  };
+.result-info {
+  flex: 1;
+  min-width: 0;
+}
 
-  // 選擇集合名稱搜尋結果
-  const selectNamePlace = (place) => {
-    if (!place.geometry || !place.geometry.location) return;
+.result-name {
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
 
-    // 清除之前的標記
-    if (markerRef.current) {
-      markerRef.current.setMap(null);
-    }
+.result-address {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
 
-    // 添加標記
-    markerRef.current = new window.google.maps.Marker({
-      position: place.geometry.location,
-      map: mapRef.current,
-      animation: window.google.maps.Animation.DROP
-    });
+.result-rating {
+  font-size: 11px;
+  color: #4b5563;
+  margin-bottom: 2px;
+}
 
-    // 設置地圖中心和縮放
-    mapRef.current.setCenter(place.geometry.location);
-    mapRef.current.setZoom(17);
+.result-status {
+  font-size: 11px;
+  font-weight: 500;
+}
 
-    // 更新表單數據
-    setFormData(prev => ({
-      ...prev,
-      name: place.name,
-      address: place.formatted_address
-    }));
+.result-status.open {
+  color: #059669;
+}
 
-    // 隱藏搜尋結果
-    setShowNameResults(false);
-  };
+.result-status.closed {
+  color: #dc2626;
+}
 
-  // 處理集合名稱輸入變化
-  const handleNameInputChange = (e) => {
-    const value = e.target.value;
-    setFormData({ ...formData, name: value });
-    
-    if (value.length > 2) {
-      searchPlacesForName(value);
-    } else {
-      setShowNameResults(false);
-    }
-  };
+/* 按鈕網格排列 */
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
 
-  // 隱藏集合名稱搜尋結果
-  const hideNameResults = () => {
-    setTimeout(() => setShowNameResults(false), 200);
-  };
+/* 共用按鈕樣式 */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-decoration: none;
+  box-sizing: border-box;
+  min-height: 44px;
+}
 
-  // 倒數計時器
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const { date, time } = formData;
-      if (!date || !time) {
-        setCountdown('');
-        setCountdownClass('countdown-red');
-        return;
-      }
+/* 不同功能按鈕顏色區分 */
+.btn-download {
+  background: #6366f1;
+  color: white;
+}
 
-      const target = new Date(`${date}T${time}`);
-      const now = new Date();
-      const diff = target - now;
+.btn-download:hover {
+  background: #5856eb;
+}
 
-      if (diff <= 0) {
-        setCountdown('⏰ 已過期');
-        setCountdownClass('countdown-expired');
-        return;
-      }
+.btn-calendar {
+  background: #dc2626;
+  color: white;
+}
 
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const minutes = Math.floor((diff / (1000 * 60)) % 60);
-      const seconds = Math.floor((diff / 1000) % 60);
+.btn-calendar:hover {
+  background: #b91c1c;
+}
 
-      let countdownText = '';
-      if (days > 0) {
-        countdownText = `⏳ 還有 ${days} 天 ${hours} 小時`;
-        setCountdownClass('countdown-safe');
-      } else if (hours > 1) {
-        countdownText = `⏳ 還有 ${hours} 小時 ${minutes} 分鐘`;
-        setCountdownClass('countdown-normal');
-      } else if (hours === 1) {
-        countdownText = `⏳ 還有 1 小時 ${minutes} 分鐘`;
-        setCountdownClass('countdown-warn');
-      } else if (minutes > 5) {
-        countdownText = `⏳ 還有 ${minutes} 分鐘 ${seconds} 秒`;
-        setCountdownClass('countdown-danger');
-      } else {
-        countdownText = `🚨 最後 ${minutes} 分 ${seconds} 秒！`;
-        setCountdownClass('countdown-critical');
-      }
+.btn-map {
+  background: #0ea5e9;
+  color: white;
+}
 
-      setCountdown(countdownText);
-    }, 1000);
+.btn-map:hover {
+  background: #0284c7;
+}
 
-    return () => clearInterval(timer);
-  }, [formData]);
+.btn-copy {
+  background: #f59e0b;
+  color: white;
+}
 
-  // 生成 ICS 檔案內容
-  const generateICS = (date, time, name, address) => {
-    const dateObj = new Date(`${date}T${time}`);
-    const start = dateObj.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const end = new Date(dateObj.getTime() + 3600000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const uid = `${Date.now()}@calendar-generator.com`;
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
-    
-    const eventDescription = [
-      '集合活動',
-      '',
-      `地圖連結：${mapUrl}`,
-      `地址：${address}`
-    ].join('\\n');
+.btn-copy:hover {
+  background: #d97706;
+}
 
-    return [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//TourHub Calendar Generator//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:${uid}`,
-      `DTSTAMP:${stamp}`,
-      `DTSTART:${start}`,
-      `DTEND:${end}`,
-      `SUMMARY:${name || '集合活動'}`,
-      `LOCATION:${address}`,
-      `DESCRIPTION:${eventDescription}`,
-      'STATUS:CONFIRMED',
-      'TRANSP:OPAQUE',
-      'END:VEVENT',
-      'END:VCALENDAR'
-    ].join('\r\n');
-  };
+.btn-share {
+  background: #10b981;
+  color: white;
+}
 
-  // 下載 ICS 檔案
-  const downloadICS = () => {
-    const { date, time, name, address } = formData;
-    if (!date || !time || !address) {
-      alert('請填寫日期、時間和地址');
-      return;
-    }
+.btn-share:hover {
+  background: #059669;
+}
 
-    try {
-      const icsContent = generateICS(date, time, name, address);
-      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `${name || '集合活動'}_${date.replace(/-/g, '')}.ics`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
-    } catch (error) {
-      console.error('下載失敗:', error);
-      alert('下載失敗，請稍後再試');
-    }
-  };
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-  // 加入 Google Calendar
-  const addToGoogleCalendar = () => {
-    const { date, time, name, address } = formData;
-    if (!date || !time || !address) {
-      alert('請填寫日期、時間和地址');
-      return;
-    }
+.btn:disabled:hover {
+  opacity: 0.5;
+}
 
-    try {
-      const startTime = new Date(`${date}T${time}`);
-      const endTime = new Date(startTime.getTime() + 3600000);
-      
-      const start = startTime.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-      const end = endTime.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-      
-      const params = new URLSearchParams({
-        action: 'TEMPLATE',
-        text: name || '集合活動',
-        dates: `${start}/${end}`,
-        details: '集合通知',
-        location: address,
-        sf: 'true',
-        output: 'xml'
-      });
+/* 倒數計時區塊 */
+.countdown {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  font-weight: bold;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+}
 
-      const calendarUrl = `https://www.google.com/calendar/render?${params.toString()}`;
-      window.open(calendarUrl, '_blank');
-    } catch (error) {
-      console.error('開啟 Google Calendar 失敗:', error);
-      alert('開啟 Google Calendar 失敗');
-    }
-  };
+.countdown-safe {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
 
-  // 複製活動資訊
-  const copyInfo = async () => {
-    const { date, time, name, address, participants } = formData;
-    if (!date || !time || !address) {
-      alert('請填寫日期、時間和地址');
-      return;
-    }
+.countdown-normal {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
 
-    const info = [
-      `📍 ${name || '集合活動'}`,
-      `📅 ${new Date(`${date}T${time}`).toLocaleDateString('zh-TW', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'short'
-      })}`,
-      `🕒 ${time}`,
-      `📍 ${address}`,
-      participants ? `👥 參加者：${participants}` : '',
-      `🗺️ 地圖：https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    ].filter(Boolean).join('\n');
+.countdown-warn {
+  background: #fed7aa;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
 
-    try {
-      await navigator.clipboard.writeText(info);
-      alert('資訊已複製到剪貼簿！');
-    } catch (error) {
-      console.error('複製失敗:', error);
-      alert('複製失敗，請手動複製');
-    }
-  };
+.countdown-danger {
+  background: #fecaca;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
 
-  // 分享到 LINE
-  const shareInfo = async () => {
-    const { date, time, name, address, participants } = formData;
-    if (!date || !time || !address) {
-      alert('請填寫日期、時間和地址');
-      return;
-    }
+.countdown-critical {
+  background: #fecaca;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  animation: pulse 1s infinite;
+}
 
-    if (!isLiffReady) {
-      alert('LINE 功能尚未準備就緒');
-      return;
-    }
+.countdown-expired {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
 
-    try {
-      const target = new Date(`${date}T${time}`);
-      const now = new Date();
-      const diff = target - now;
-      
-      let countdownText = '';
-      let countdownColor = '#dc2626';
-      
-      if (diff <= 0) {
-        countdownText = '⏰ 已過期';
-        countdownColor = '#6b7280';
-      } else {
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-        const minutes = Math.floor((diff / (1000 * 60)) % 60);
-        
-        if (days > 0) {
-          countdownText = `⏳ 還有 ${days} 天 ${hours} 小時`;
-          countdownColor = '#059669';
-        } else if (hours > 1) {
-          countdownText = `⏳ 還有 ${hours} 小時 ${minutes} 分鐘`;
-          countdownColor = '#0891b2';
-        } else if (hours === 1) {
-          countdownText = `⏳ 還有 1 小時 ${minutes} 分鐘`;
-          countdownColor = '#ea580c';
-        } else {
-          countdownText = `⏳ 還有 ${minutes} 分鐘`;
-          countdownColor = '#dc2626';
-        }
-      }
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
 
-      const flexMessage = {
-        type: 'flex',
-        altText: `集合通知 - ${name || '未命名地點'}`,
-        contents: {
-          type: 'bubble',
-          styles: {
-            body: {
-              backgroundColor: '#f8fafc'
-            }
-          },
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'md',
-            paddingAll: 'lg',
-            contents: [
-              {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'sm',
-                contents: [
-                  {
-                    type: 'text',
-                    text: '📍 集合通知',
-                    weight: 'bold',
-                    size: 'xl',
-                    color: '#1f2937'
-                  },
-                  {
-                    type: 'text',
-                    text: name || '未命名地點',
-                    weight: 'bold',
-                    size: 'lg',
-                    color: '#374151',
-                    wrap: true
-                  }
-                ]
-              },
-              {
-                type: 'separator',
-                margin: 'md'
-              },
-              {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'sm',
-                margin: 'md',
-                contents: [
-                  {
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: [
-                      {
-                        type: 'text',
-                        text: '📅',
-                        size: 'sm',
-                        flex: 0
-                      },
-                      {
-                        type: 'text',
-                        text: new Date(`${date}T${time}`).toLocaleDateString('zh-TW', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                          weekday: 'short'
-                        }),
-                        size: 'sm',
-                        color: '#111827',
-                        flex: 4,
-                        margin: 'sm'
-                      }
-                    ]
-                  },
-                  {
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: [
-                      {
-                        type: 'text',
-                        text: '🕒',
-                        size: 'sm',
-                        flex: 0
-                      },
-                      {
-                        type: 'text',
-                        text: time,
-                        size: 'sm',
-                        color: '#111827',
-                        flex: 4,
-                        margin: 'sm'
-                      }
-                    ]
-                  },
-                  {
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: [
-                      {
-                        type: 'text',
-                        text: '📍',
-                        size: 'sm',
-                        flex: 0
-                      },
-                      {
-                        type: 'text',
-                        text: address,
-                        size: 'sm',
-                        color: '#111827',
-                        wrap: true,
-                        flex: 4,
-                        margin: 'sm'
-                      }
-                    ]
-                  },
-                  ...(participants ? [{
-                    type: 'box',
-                    layout: 'horizontal',
-                    contents: [
-                      {
-                        type: 'text',
-                        text: '👥',
-                        size: 'sm',
-                        flex: 0
-                      },
-                      {
-                        type: 'text',
-                        text: `參加者：${participants}`,
-                        size: 'sm',
-                        color: '#111827',
-                        wrap: true,
-                        flex: 4,
-                        margin: 'sm'
-                      }
-                    ]
-                  }] : [])
-                ]
-              },
-              {
-                type: 'box',
-                layout: 'vertical',
-                backgroundColor: countdownColor === '#6b7280' ? '#f3f4f6' : '#fef2f2',
-                cornerRadius: 'md',
-                paddingAll: 'md',
-                margin: 'md',
-                contents: [
-                  {
-                    type: 'text',
-                    text: countdownText,
-                    weight: 'bold',
-                    size: 'md',
-                    color: countdownColor,
-                    align: 'center',
-                    wrap: true
-                  }
-                ]
-              },
-              ...(diff > 0 && diff < 24 * 60 * 60 * 1000 ? [{
-                type: 'text',
-                text: '💡 建議提前 10-15 分鐘出發',
-                size: 'xs',
-                color: '#6b7280',
-                wrap: true,
-                margin: 'sm',
-                align: 'center'
-              }] : [])
-            ]
-          },
-          footer: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'sm',
-            contents: [
-              {
-                type: 'button',
-                style: 'primary',
-                height: 'sm',
-                color: '#4f46e5',
-                action: {
-                  type: 'uri',
-                  label: '🗺️ 查看地圖',
-                  uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-                }
-              }
-            ]
-          }
-        }
-      };
+/* 地圖外框 */
+.map-box {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  flex: 1 1 100%;
+  max-width: 800px;
+  box-sizing: border-box;
+}
 
-      if (liff.isApiAvailable('shareTargetPicker')) {
-        await liff.shareTargetPicker([flexMessage]);
-      } else {
-        alert('此環境不支援 LINE 分享功能');
-      }
-    } catch (error) {
-      console.error('分享失敗:', error);
-      alert('分享失敗：' + error.message);
-    }
-  };
+.map-box h3 {
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 1rem;
+  color: #1f2937;
+}
 
-  // 開啟地圖
-  const openMap = () => {
-    if (!formData.address) {
-      alert('請先設定地址');
-      return;
-    }
-    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`;
-    window.open(mapUrl, '_blank');
-  };
+.map {
+  width: 100%;
+  height: 400px;
+  border-radius: 1rem;
+  border: 1px solid #e5e7eb;
+}
 
-  return (
-    <div className="container">
-      {userProfile && (
-        <div className="user-card">
-          <img src={userProfile.pictureUrl} alt="用戶頭像" className="user-avatar" />
-          <span>Hi, {userProfile.displayName}</span>
-        </div>
-      )}
+.map-hint {
+  text-align: center;
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
 
-      <div className="content-wrapper">
-        <div className="form-card">
-          <h2>📅 集合活動設定</h2>
-          
-          <div className="form-group">
-            <label htmlFor="name">集合名稱</label>
-            <div className="search-container">
-              <input 
-                id="name"
-                type="text"
-                value={formData.name} 
-                onChange={handleNameInputChange}
-                onBlur={hideNameResults}
-                onFocus={() => nameSearchResults.length > 0 && setShowNameResults(true)}
-                placeholder="搜尋地點名稱"
-              />
-              {showNameResults && nameSearchResults.length > 0 && (
-                <div className="search-results">
-                  {nameSearchResults.map((place, index) => (
-                    <div 
-                      key={`${place.place_id}-${index}`}
-                      className="search-result-item"
-                      onClick={() => selectNamePlace(place)}
-                    >
-                      <div className="result-icon">
-                        📍
-                      </div>
-                      <div className="result-info">
-                        <div className="result-name">{place.name}</div>
-                        <div className="result-address">{place.formatted_address}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+/* 響應式支援：平板 */
+@media screen and (max-width: 1024px) {
+  .content-wrapper {
+    gap: 1.5rem;
+  }
+  
+  .form-card,
+  .map-box {
+    max-width: 100%;
+  }
+}
 
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="date">集合日期</label>
-              <input 
-                id="date"
-                type="date" 
-                value={formData.date} 
-                onChange={e => setFormData({ ...formData, date: e.target.value })}
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="time">集合時間</label>
-              <input 
-                id="time"
-                type="time" 
-                value={formData.time} 
-                onChange={e => setFormData({ ...formData, time: e.target.value })}
-              />
-            </div>
-          </div>
+/* 響應式支援：手機直排顯示 */
+@media screen and (max-width: 768px) {
+  .container {
+    padding: 0.75rem;
+  }
 
-          <div className="form-group">
-            <label htmlFor="address">集合地址</label>
-            <input 
-              id="address"
-              type="text"
-              value={formData.address} 
-              onChange={e => setFormData({ ...formData, address: e.target.value })} 
-              placeholder="請點選地圖或手動輸入精確地址"
-            />
-            <p className="address-hint">💡 請點選地圖上的位置來獲得精確地址</p>
-          </div>
+  .content-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.5rem;
+  }
 
-          <div className="form-group">
-            <label htmlFor="participants">參加者（選填）</label>
-            <input 
-              id="participants"
-              type="text"
-              value={formData.participants} 
-              onChange={e => setFormData({ ...formData, participants: e.target.value })} 
-              placeholder="輸入人名"
-            />
-          </div>
+  .form-card,
+  .map-box {
+    width: 100%;
+    max-width: 100%;
+    padding: 1.25rem;
+  }
 
-          {countdown && (
-            <div className={`countdown ${countdownClass}`}>
-              <Clock size={16} />
-              {countdown}
-            </div>
-          )}
+  .form-row {
+    flex-direction: column;
+    gap: 0;
+  }
 
-          <div className="button-grid">
-            <button className="btn btn-download" onClick={downloadICS}>
-              <Download size={16} />
-              下載 .ics
-            </button>
-            <button className="btn btn-calendar" onClick={addToGoogleCalendar}>
-              <Calendar size={16} />
-              Google Calendar
-            </button>
-            <button className="btn btn-map" onClick={openMap}>
-              <MapPin size={16} />
-              查看地圖
-            </button>
-            <button className="btn btn-copy" onClick={copyInfo}>
-              <Copy size={16} />
-              複製資訊
-            </button>
-            <button className="btn btn-share" onClick={shareInfo} disabled={!isLiffReady}>
-              <Share2 size={16} />
-              分享到LINE好友
-            </button>
-          </div>
-        </div>
+  .form-row .form-group {
+    margin-bottom: 1rem;
+  }
 
-        <div className="map-box">
-          <h3>🗺️ 地圖選擇精確位置</h3>
-          {!mapLoaded && (
-            <div className="map-loading">
-              <p>⏳ 地圖載入中...</p>
-            </div>
-          )}
-          <div className="map-search-container">
-            <input 
-              id="map-search"
-              type="text"
-              placeholder="搜尋地點..."
-              className="map-search-input"
-            />
-          </div>
-          <div id="map" className="map" style={{ display: mapLoaded ? 'block' : 'none' }} />
-          <p className="map-hint">💡 點擊地圖來選擇精確的集合位置</p>
-        </div>
-      </div>
-    </div>
-  );
-};
+  .button-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
 
-export default CalendarGenerator;
+  .map {
+    height: 300px;
+  }
+
+  .btn {
+    font-size: 1rem;
+    padding: 0.875rem 1rem;
+  }
+
+  .user-card {
+    flex-direction: row;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .countdown {
+    font-size: 1rem;
+    padding: 0.875rem;
+  }
+
+  .search-results {
+    max-height: 250px;
+  }
+
+  .result-name {
+    font-size: 13px;
+  }
+  
+  .result-address {
+    font-size: 11px;
+  }
+}
+
+/* 響應式支援：小手機 */
+@media screen and (max-width: 480px) {
+  .container {
+    padding: 0.5rem;
+  }
+
+  .form-card,
+  .map-box {
+    padding: 1rem;
+  }
+
+  .form-card h2 {
+    font-size: 1.25rem;
+  }
+
+  .btn {
+    font-size: 0.9rem;
+    padding: 0.75rem;
+  }
+
+  .map {
+    height: 250px;
+  }
+
+  .countdown {
+    font-size: 0.9rem;
+  }
+}
