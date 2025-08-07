@@ -785,7 +785,7 @@ const CalendarGenerator = () => {
             </button>
             <button className="btn btn-share" onClick={shareInfo} disabled={!isLiffReady}>
               <Share2 size={16} />
-              分享到LINE
+              分享到給LINE好友
             </button>
           </div>
         </div>
